@@ -218,7 +218,14 @@ football-lab/
 Résultat attendu : Modèle en étoile déployé sur Snowflake, tests passants, documentation générée.
 📊 PHASE 6 — Power BI (Visualisation)
 Tu ajoutes à la structure :
-plain
+
+mkdir football-lab && cd football-lab
+python -m venv venv
+# Windows : venv\Scripts\activate | Linux/Mac : source venv/bin/activate
+pip install pandas requests python-dotenv sqlalchemy psycopg2-binary pyarrow pyspark delta-spark kaggle
+
+
+
 football-lab/
 └── powerbi/
     ├── football_analytics.pbix    ← (créé via l'interface Power BI)
