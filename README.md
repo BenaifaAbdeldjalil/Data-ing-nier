@@ -251,7 +251,9 @@ plain
 
 □ 4. Installer les dépendances
       pip install -r requirements.txt
-
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
 🐍 PHASE 1 — Python & Ingestion
 1.1 Créer les dossiers nécessaires
 Depuis la racine football-lab/ :
@@ -517,6 +519,10 @@ data/raw/api/teams_pl_20260125_143025.parquet
 data/raw/kaggle/results.csv
 data/raw/kaggle/shootouts.csv (si présent dans le dataset)
 
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
 🐘 PHASE 2 — PostgreSQL Staging
 2.1 Créer les dossiers et fichiers SQL
 bash
@@ -719,7 +725,9 @@ python scripts/load_to_postgres.py
 # 5. Valider
 psql -U football_user -d football_lab -f sql/postgres/queries/validation.sql
 
-
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
 🔥 PHASE 3 — Databricks Medallion
 3.1 Créer les dossiers
 bash
@@ -1011,6 +1019,11 @@ Créer 3 notebooks dans Databricks, coller le contenu ci-dessus
 Exécuter dans l'ordre : 01_ → 02_ → 03_
 Valider avec les requêtes SQL dans un notebook ou sql/databricks/validation.sql
 
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ❄️ PHASE 4 — Snowflake Data Warehouse
 4.1 Créer les fichiers SQL
 bash
@@ -1177,6 +1190,10 @@ Exécuter 02_load_raw.sql
 Exécuter 03_cleaned_views.sql
 Exécuter 04_analytics_tables.sql
 
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
 🔄 PHASE 5 — dbt (Transformation & Modélisation)
 5.1 Créer la structure dbt
 bash
@@ -1562,6 +1579,11 @@ dbt test
 dbt docs generate
 dbt docs serve  # http://localhost:8080
 
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
 🔄 PHASE 5 — dbt (Transformation & Modélisation)
 5.1 Créer la structure dbt
 bash
@@ -1948,5 +1970,157 @@ dbt docs generate
 dbt docs serve  # http://localhost:8080
 
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+📊 PHASE 6 — Power BI
+6.1 Créer le dossier Power BI
+bash
+mkdir -p powerbi/themes
+mkdir -p powerbi/data_model
+6.2 Fichier de mesures DAX
+powerbi/measures.dax
+dax
+// ==================== MESURES DE BASE ====================
+
+Total Matches = COUNTROWS(fact_matches)
+
+Total Goals = SUM(fact_matches[total_goals])
+
+Avg Goals per Match = DIVIDE([Total Goals], [Total Matches], 0)
+
+// ==================== RÉSULTATS ====================
+
+Home Wins = CALCULATE([Total Matches], fact_matches[result] = "HOME_WIN")
+Away Wins = CALCULATE([Total Matches], fact_matches[result] = "AWAY_WIN")
+Draws = CALCULATE([Total Matches], fact_matches[result] = "DRAW")
+
+Home Win Rate % = DIVIDE([Home Wins], [Total Matches], 0)
+Away Win Rate % = DIVIDE([Away Wins], [Total Matches], 0)
+Draw Rate % = DIVIDE([Draws], [Total Matches], 0)
+
+// ==================== BUTS ====================
+
+Home Goals = SUM(fact_matches[home_score])
+Away Goals = SUM(fact_matches[away_score])
+
+Avg Home Goals = DIVIDE([Home Goals], [Total Matches], 0)
+Avg Away Goals = DIVIDE([Away Goals], [Total Matches], 0)
+
+// ==================== POINTS (classement) ====================
+
+Total Points = 
+SUMX(
+    fact_matches,
+    SWITCH(
+        fact_matches[result],
+        "HOME_WIN", 3,
+        "AWAY_WIN", 0,
+        "DRAW", 1,
+        0
+    )
+) + 
+SUMX(
+    fact_matches,
+    SWITCH(
+        fact_matches[result],
+        "HOME_WIN", 0,
+        "AWAY_WIN", 3,
+        "DRAW", 1,
+        0
+    )
+)
+
+Points per Match = DIVIDE([Total Points], [Total Matches], 0)
+
+// ==================== ÉQUIPE SÉLECTIONNÉE ====================
+
+Selected Team = SELECTEDVALUE(dim_teams[team_name], "Aucune équipe")
+
+Goals For Selected Team = 
+VAR SelectedTeam = SELECTEDVALUE(dim_teams[team_name])
+RETURN
+    CALCULATE(
+        SUM(fact_matches[home_score]),
+        dim_teams[team_name] = SelectedTeam
+    ) +
+    CALCULATE(
+        SUM(fact_matches[away_score]),
+        USERELATIONSHIP(fact_matches[away_team_sk], dim_teams[team_sk]),
+        dim_teams[team_name] = SelectedTeam
+    )
+
+// ==================== FORMES RÉCENTES ====================
+
+Last 5 Matches Points = 
+VAR SelectedTeam = SELECTEDVALUE(dim_teams[team_name])
+VAR Last5 = 
+    TOPN(
+        5,
+        FILTER(
+            ALL(fact_matches),
+            RELATED(dim_teams[team_name]) = SelectedTeam
+        ),
+        fact_matches[match_date], DESC
+    )
+RETURN
+    CALCULATE([Total Points], Last5)
+6.3 Étapes dans Power BI Desktop
+Obtenir les données → Snowflake → renseigner serveur + warehouse
+Sélectionner : FOOTBALL_LAB.ANALYTICS.fact_matches, dim_teams, dim_date, dim_competitions
+Modèle :
+fact_matches[match_date] → dim_date[date_key]
+fact_matches[home_team_sk] → dim_teams[team_sk] (active)
+fact_matches[away_team_sk] → dim_teams[team_sk] (inactive)
+fact_matches[competition_code] → dim_competitions[competition_code]
+Créer les mesures : copier-coller depuis measures.dax
+Pages :
+Vue Globale : KPIs (Total Matches, Avg Goals), carte par pays, tendance buts/saison
+Par Équipe : slicer équipe, forme récente, domicile/extérieur, H2H
+Par Joueur : (nécessite d'ajouter une table joueurs) stats, radar chart
+✅ Récapitulatif des commandes globales
+bash
+# ========== PHASE 0 ==========
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cp config/.env.example config/.env
+# (éditer config/.env avec tes vraies clés)
+
+# ========== PHASE 1 ==========
+python scripts/ingest_api.py
+python scripts/ingest_kaggle.py
+
+# ========== PHASE 2 ==========
+psql -U postgres -f sql/postgres/init/01_create_database.sql
+psql -U postgres -f sql/postgres/init/02_create_staging_tables.sql
+psql -U postgres -f sql/postgres/init/03_create_indexes.sql
+python scripts/load_to_postgres.py
+psql -U football_user -d football_lab -f sql/postgres/queries/validation.sql
+
+# ========== PHASE 3 ==========
+# (Dans Databricks UI)
+# Uploader les Parquet dans DBFS
+# Exécuter notebooks 01 → 02 → 03
+
+# ========== PHASE 4 ==========
+# (Dans Snowflake UI)
+# Exécuter sql/snowflake/01_setup.sql → 04_analytics_tables.sql
+
+# ========== PHASE 5 ==========
+cd dbt-football
+dbt deps
+dbt debug
+dbt seed
+dbt run
+dbt test
+dbt docs generate
+dbt docs serve
+
+# ========== PHASE 6 ==========
+# Ouvrir Power BI Desktop
+# Se connecter à Snowflake
+# Importer les tables ANALYTICS.*
+# Créer les mesures DAX et les pages de dashboard
 
 
